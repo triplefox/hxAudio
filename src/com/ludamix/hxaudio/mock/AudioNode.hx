@@ -29,6 +29,7 @@ class AudioNode
 	{
 		cnx_audio = new IONode();
 		cnx_param = new IONode();
+		cnx_audio.data = this;
 		current_time = -1.;
 	}
 	

@@ -1,6 +1,7 @@
 package com.ludamix.hxaudio.mock;
 
 import com.ludamix.hxaudio.core.IONode;
+import flash.Lib;
 import flash.media.Sound;
 import flash.media.SoundChannel;
 import flash.events.SampleDataEvent;
@@ -60,8 +61,11 @@ class AudioContext
 	{
 		
 		destination.data = e;
+		e.data.length = bufferSize;
+		e.data.position = 0;
+		currentTime = Lib.getTimer();
 		var result = prepGraph(currentTime);
-		while (Std.int(destination.data.data.length) < bufferSize)
+		while (Std.int(e.data.position) < bufferSize)
 		{
 			for (r in result)
 				r.data.process(BLOCKSIZE);
@@ -123,10 +127,11 @@ class AudioContext
 	
 	}
 	
-	public function new(?bufferSize = 2048) 
+	public function new(?bufferSize = 22050)
 	{	
 		this.bufferSize = bufferSize;
 		this.BLOCKSIZE = 128;
+		destination = new AudioDestinationNode();
 	}
 	
 	@:allow(com.ludamix.hxaudio.mock)

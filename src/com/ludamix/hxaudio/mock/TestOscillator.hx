@@ -23,7 +23,7 @@ class TestOscillator extends AudioNode
 	
 	private override function process(blocksize)
 	{
-		var inc = 44100 / 440.*Math.PI * 2;		
+		var inc = 440. / 22050 *Math.PI * 2;		
 		for (n in cnx_audio.outputs)
 		{
 			var pos = 0;

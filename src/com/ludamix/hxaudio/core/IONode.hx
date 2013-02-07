@@ -50,7 +50,8 @@ class IONode<T, R>
 	
 	public function new()
 	{
-	
+		this.inputs = new Array();
+		this.outputs = new Array();
 	}
 	
 	public inline function getInputs(slot : Int)

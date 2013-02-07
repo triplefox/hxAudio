@@ -20,7 +20,7 @@ class HXABuf32
 
 	public function new()
 	{
-	
+		inner = new HXARawBuf32();
 	}
 	
 	public inline function set(i : Int, v : Float)

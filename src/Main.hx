@@ -14,13 +14,21 @@ import com.ludamix.hxaudio.mock.*;
 
 class Main 
 {
+
+	public static var context : AudioContext;
+	public static var osc : TestOscillator;
+	
+	static function onFrame(e : flash.events.Event)
+	{
+	
+	}
 	
 	static function main() 
 	{
 		
-		var context : AudioContext = new AudioContext();
+		context = new AudioContext();
 		
-		var osc = new TestOscillator();
+		osc = new TestOscillator();
 		osc.connectNode(context.destination);
 		
 		//var osc = new OscillatorNode();
@@ -37,6 +45,8 @@ class Main
 		
 		context.startRenderingOnline();
 		trace("ok");
+		
+		flash.Lib.current.addEventListener(flash.events.Event.ENTER_FRAME, onFrame);
 		
 	}
 	
