@@ -1,6 +1,6 @@
 package com.ludamix.hxaudio.mock;
 
-import com.ludamix.hxaudio.core.HXABuf32;
+import com.ludamix.hxaudio.core.IONode;
 
 /**
  * ...
@@ -10,9 +10,17 @@ import com.ludamix.hxaudio.core.HXABuf32;
 class AudioParam
 {
 
+	//@:allow(com.ludamix.hxaudio.mock)
+	//private var cnx : IONode<AudioNode, ArrayBuffer>;
+
 	public function new() 
 	{	
 		
+	}
+	
+	public function disconnect()
+	{
+		//cnx.
 	}
 	
 }

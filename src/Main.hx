@@ -1,10 +1,10 @@
 package ;
 
-#if js
+#if flash
+import com.ludamix.hxaudio.mock.*;
+#else
 //import js.html.audio.*;
 //import js.Lib;
-#else
-import com.ludamix.hxaudio.mock.*;
 #end
 
 /**
@@ -20,6 +20,9 @@ class Main
 		
 		var context : AudioContext = new AudioContext();
 		
+		var osc = new TestOscillator();
+		osc.connectNode(context.destination);
+		
 		//var osc = new OscillatorNode();
 		//osc.type = "sine";
 		
@@ -32,7 +35,7 @@ class Main
 		//osc.start(0.);
 		//osc.stop(0.25);
 		
-		//context.startRenderingOnline();
+		context.startRenderingOnline();
 		trace("ok");
 		
 	}

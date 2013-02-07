@@ -1,12 +1,13 @@
 package com.ludamix.hxaudio.core;
 
-class IOConnection<T>
+class IOConnection<T, R>
 {
 	
 	public var slot_send : Int;
 	public var slot_recieve : Int;
-	public var send : IONode<T>; 
-	public var recieve : IONode<T>;
+	public var send : IONode<T, R>; 
+	public var recieve : IONode<T, R>;
+	public var data : R;
 	
 	public function new(send, recieve, slot_send, slot_recieve)
 	{
@@ -23,7 +24,7 @@ class IOConnection<T>
 		this.recieve.inputs.push(this);
 	}
 	
-	public function equals(a :IOConnection<T>)
+	public function equals(a :IOConnection<T, R>)
 	{
 		return 	a.slot_send == this.slot_send &&
 				a.slot_recieve == this.slot_recieve &&
@@ -33,18 +34,19 @@ class IOConnection<T>
 	
 	public function disconnect()
 	{
-		this.send.outputs = Lambda.filter(this.send.outputs, equals);
-		this.recieve.inputs = Lambda.filter(this.recieve.inputs, equals);
+		this.send.outputs = Lambda.array(Lambda.filter(this.send.outputs, equals));
+		this.recieve.inputs = Lambda.array(Lambda.filter(this.recieve.inputs, equals));
 	}
 	
 }
 
-class IONode<T>
+class IONode<T, R>
 {
 
-	public var inputs : Array<IOConnection<T>>;
-	public var outputs : Array<IOConnection<T>>;
+	public var inputs : Array<IOConnection<T, R>>;
+	public var outputs : Array<IOConnection<T, R>>;
 	public var search_flip : Bool;
+	public var data : T;
 	
 	public function new()
 	{
@@ -53,12 +55,12 @@ class IONode<T>
 	
 	public inline function getInputs(slot : Int)
 	{
-		return Lambda.filter(inputs, function (a : IOConnection<T>) { return a.slot_send == slot; } );
+		return Lambda.filter(inputs, function (a : IOConnection<T, R>) { return a.slot_send == slot; } );
 	}
 	
 	public inline function getOutputs(slot : Int)
 	{
-		return Lambda.filter(outputs, function (a : IOConnection<T>) { return a.slot_recieve == slot; } );
+		return Lambda.filter(outputs, function (a : IOConnection<T, R>) { return a.slot_recieve == slot; } );
 	}
 	
 	public inline function connect(destination, slot_send, slot_recieve)
@@ -66,6 +68,11 @@ class IONode<T>
 		var cnx = new IOConnection(this, destination, slot_send, slot_recieve);
 		cnx.connect();
 		destination.search_flip = this.search_flip;
+	}
+	
+	public inline function disconnectOutput(i : Int)
+	{
+		for ( o in outputs ) { if (o.slot_send==i) {o.disconnect();} }
 	}
 	
 	public inline function disconnectOutputs()
@@ -85,10 +92,10 @@ class IONode<T>
 	 * @param	?outputs=true Check the outputs of each node.
 	 * @return
 	 */
-	public function findNodes(compare : IONode<T>->Bool, ?inputs=true, ?outputs=true) : Array<IONode>
+	public function findNodes(compare : IONode<T, R>->Bool, ?inputs=true, ?outputs=true) : Array<IONode<T, R>>
 	{
-		var open = new Array<IONode>();
-		var result = new Array<IONode>();
+		var open = new Array<IONode<T, R>>();
+		var result = new Array<IONode<T, R>>();
 		
 		open.push(this);
 		var flip = !this.search_flip;
@@ -103,16 +110,16 @@ class IONode<T>
 			{
 				for (n in cur.inputs)
 				{
-					if (n.search_flip != flip)
-						open.push(n);
+					if (n.send.search_flip != flip)
+						open.push(n.send);
 				}
 			}
 			if (outputs)
 			{
 				for (n in cur.outputs)
 				{
-					if (n.search_flip != flip)
-						open.push(n);				
+					if (n.recieve.search_flip != flip)
+						open.push(n.recieve);				
 				}
 			}
 		}

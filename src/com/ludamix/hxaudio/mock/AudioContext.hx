@@ -1,6 +1,6 @@
 package com.ludamix.hxaudio.mock;
 
-import com.ludamix.hxaudio.core.HXABuf32;
+import com.ludamix.hxaudio.core.IONode;
 import flash.media.Sound;
 import flash.media.SoundChannel;
 import flash.events.SampleDataEvent;
@@ -13,16 +13,15 @@ import flash.Vector;
 
 typedef DecodeSuccessCallback = AudioBuffer->Void;
 typedef DecodeErrorCallback = Void->Void;
-typedef ArrayBuffer = HXABuf32;
 
 class AudioContext
 {
 
-	public var destination(null, default) : AudioDestinationNode;
-	public var sampleRate(null, default) : Float;
-	public var currentTime(null, default) : Float;
-	public var listener(null, default) : AudioListener;
-	public var activeSourceCount(null, default) : Int;
+	public var destination(default, null) : AudioDestinationNode;
+	public var sampleRate(default, null) : Float;
+	public var currentTime(default, null) : Float;
+	public var listener(default, null) : AudioListener;
+	public var activeSourceCount(default, null) : Int;
 	private var sources : Array<AudioNode>;
 	
 	public function createBuffer(numberOfChannels : Int, length : Int, sampleRate : Float) : AudioBuffer
@@ -44,6 +43,10 @@ class AudioContext
 	
 	private var sound : Sound;
 	private var channel : SoundChannel;
+
+	public var bufferSize(null, default) : Int;	
+	
+	public var BLOCKSIZE : Int;
 	
 	public function startRenderingOnline()
 	{
@@ -55,56 +58,64 @@ class AudioContext
 	
 	private function onSamples(e : SampleDataEvent)
 	{
-		// we have to start the chain and then propogate the destination back over here.
-		// ...writing 128 sample chunks.
 		
-		// oh. we need to run it like a DAG breadth-first traversal and then:
-		
-		if (curNode == destination)
+		destination.data = e;
+		var result = prepGraph(currentTime);
+		while (Std.int(destination.data.data.length) < bufferSize)
 		{
-			e.data.writeFloat(0.);
+			for (r in result)
+				r.data.process(BLOCKSIZE);
 		}
-		
-		var open = new Array<AudioNode>();
-		// Now all nodes need registration functions for these keep-alive methods:
-		// 1. isPlaying
-		// 2. connected
-		// 3. tail-time
-		
-		// These functions are static to all AudioContexts - the specific context doesn't care.
-		// And we have to build the graph in reverse from destination to source,
-		// but that part can fortunately be done at add time.
-		
-		// In pre-traverse we check isProcessable() and move the node to the back if it's not ready yet.
-		// Then add the outputs and param_outputs to the back of the queue.
 		
 	}
 	
-	private function updateSources()
+	private function findSourceNodes(t : IONode<AudioNode, ArrayBuffer>) : Bool
 	{
-		// Where does this get called?
-		// When we connect nodes it has to figure out if a destination is at either end...
-		// i.e. connection is a process that always requires graph traversal.
-		// either that or we poll it every frame(bad bad bad)
-		// OK. Maybe IntHashArray is not "really" the structure we want to use,
-		// but instead just a fragment of the whole fanning-graph structure.
-		var open = [destination];
-		var closed = [];
-		var result = [];
-		while (open.length > 0)
+		var n = t.data; 
+		return (n.numberOfOutputs == 1 && n.numberOfInputs == 0);
+	}
+	
+	private function prepGraph(current_time : Float)
+	{
+		/*
+		
+		TODO: Implement some very simple test nodes so that I can start working against reality.
+		FIXME: Detect cycles as they're connected.
+		FIXME: Implement all the rules for when nodes should die(the tailtime one is a big one and Chrome doesn't do it yet).
+		FIXME: Only rewrite the graph when the situation changes.
+		FIXME: AudioParams are NOT correctly handled yet.
+		
+		*/
+		
+		// 1. Find all the sources.
+		var result = destination.cnx_audio.findNodes(findSourceNodes);
+		
+		// 2. Populate open nodes with the outputs of the source nodes.
+		var open = new Array();
+		for (n in result)
 		{
-			var c = open.shift();
-			if (c.isSourceNode()) result.push(c);
-			closed.push(c);
-			for (n in c.inputs)
+			for (o in n.data.cnx_audio.outputs)
 			{
-				if (closed.remove(n)!=null)
-					open.push(n);
-				closed.push(n);
+				o.data = new ArrayBuffer();
+				open.push(o.recieve);
 			}
 		}
-		sources = result;
-		activeSourceCount = sources.length;
+		
+		// 3. Expand from sources, until dependencies are encountered.
+		// As we do this, assign new buffers as necessary.
+		// When deps appear, move to back and continue.
+		while (open.length > 0)
+		{
+			var cur = open.shift();
+			if (cur.data.unfinishedDependencies())
+				open.push(cur);
+			cur.data.current_time = current_time;
+			cur.data.assignOutputs(BLOCKSIZE);
+			result.push(cur);
+		}
+		
+		return result;
+		
 	}
 
 	public function startRenderingOffline()
@@ -112,8 +123,10 @@ class AudioContext
 	
 	}
 	
-	public function new() 
+	public function new(?bufferSize = 2048) 
 	{	
+		this.bufferSize = bufferSize;
+		this.BLOCKSIZE = 128;
 	}
 	
 	@:allow(com.ludamix.hxaudio.mock)
