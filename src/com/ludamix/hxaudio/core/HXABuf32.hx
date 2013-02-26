@@ -14,9 +14,8 @@ package com.ludamix.hxaudio.core;
 class HXABuf32
 {
 
-	// this is roughly like FastFloatBuffer.
-	
 	public var inner : HXARawBuf32;
+	public var length (get_length, null) : Int;
 
 	public function new()
 	{
@@ -31,6 +30,11 @@ class HXABuf32
 	public inline function get(i : Int)
 	{
 		return inner[i];
+	}
+	
+	public inline function get_length() : Int
+	{
+		return inner.length;
 	}
 
 }

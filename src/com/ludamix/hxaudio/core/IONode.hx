@@ -69,6 +69,7 @@ class IONode<T, R>
 		var cnx = new IOConnection(this, destination, slot_send, slot_recieve);
 		cnx.connect();
 		destination.search_flip = this.search_flip;
+		return cnx;
 	}
 	
 	public inline function disconnectOutput(i : Int)

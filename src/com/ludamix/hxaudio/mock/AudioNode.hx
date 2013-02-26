@@ -14,7 +14,7 @@ class AudioNode
 	@:allow(com.ludamix.hxaudio.mock)
 	private var cnx_audio : IONode<AudioNode, HXABuf32>;
 	@:allow(com.ludamix.hxaudio.mock)
-	private var cnx_param : IONode<AudioParam, HXABuf32>;
+	private var cnx_param : IONode<AudioNode, AudioParam>;
 	
 	/**
 	 * current_time is an internal measure of when the node's last been updated.
@@ -40,7 +40,7 @@ class AudioNode
 	
 	public function connectParam(destination : AudioParam, ?output = 0):Void 	
 	{
-		//cnx_param.connect(destination.cnx, output, 0); 
+		cnx_param.connect(destination.owner.cnx_param, output, 0).data = destination;
 	}
 	
 	public function disconnect(?output = 0)
@@ -58,6 +58,11 @@ class AudioNode
 	private function unfinishedDependencies()
 	{
 		for (i in this.cnx_audio.inputs)
+		{
+			if (i.recieve.data.current_time != current_time)
+				return true;
+		}
+		for (i in this.cnx_param.inputs)
 		{
 			if (i.recieve.data.current_time != current_time)
 				return true;

@@ -1,7 +1,11 @@
 package ;
 
 #if flash
+import com.ludamix.hxaudio.flash.Visualizer;
 import com.ludamix.hxaudio.mock.*;
+import com.ludamix.hxaudio.mock.timeline.*;
+import flash.display.Bitmap;
+import flash.Lib;
 #else
 //import js.html.audio.*;
 //import js.Lib;
@@ -28,8 +32,8 @@ class Main
 		
 		context = new AudioContext();
 		
-		osc = new TestOscillator();
-		osc.connectNode(context.destination);
+		//osc = new TestOscillator();
+		//osc.connectNode(context.destination);
 		
 		//var osc = new OscillatorNode();
 		//osc.type = "sine";
@@ -43,8 +47,18 @@ class Main
 		//osc.start(0.);
 		//osc.stop(0.25);
 		
-		context.startRenderingOnline();
-		trace("ok");
+		//context.startRenderingOnline();
+		
+		var buf = new ArrayBuffer();
+		var timeline = new Timeline();
+		timeline.schedule(new TimelineEvent(0.5, 0.5, 10, 10, TimelineEvent.SET, null));
+		timeline.schedule(new TimelineEvent(-0.6, 0.5, 20, 40, TimelineEvent.LINEAR, null));
+		timeline.schedule(new TimelineEvent(0.3, 0.3, 98, 99, TimelineEvent.SET, null));
+		timeline.schedule(new TimelineEvent(0.5, -0.6, 110, 110, TimelineEvent.SET, null));
+		timeline.generate(0, 100, buf, 1.);
+		var viz = Visualizer.waveform(buf, 500, 100, null);
+		viz.y = 100;
+		Lib.current.addChild(viz);
 		
 		flash.Lib.current.addEventListener(flash.events.Event.ENTER_FRAME, onFrame);
 		
