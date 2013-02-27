@@ -2,6 +2,7 @@ package com.ludamix.hxaudio.mock;
 
 import com.ludamix.hxaudio.core.IONode;
 import com.ludamix.hxaudio.mock.timeline.*;
+import com.ludamix.hxaudio.mock.timeline.TimelineEvent;
 
 class AudioParam
 {
@@ -44,43 +45,56 @@ class AudioParam
 	
 	public function setValueAtTime(value : Float, startTime : Float)
 	{
-		timeline.schedule(new TimelineEvent(value, value, startTime, startTime, TimelineEvent.SET, null));
+		timeline.schedule(new TimelineEventSet(value, startTime));
 	}
 	
-	public function linearRampToValueAtTime(value : Float, endTime : Float)
+	// TODO: We have to simplify the scheduling API so that it can link as it schedules.
+	// Our reasoning is mostly sound, however we just need to fix up the notion of endTime()
+	// so that it's always getting a cached value.
+	
+	public function linearRampToValueAtTime(target : Float, endTime : Float)
 	{
-		var last = timeline.events[timeline.events.length - 1];
-		timeline.schedule(new TimelineEvent(last.end, value, last.end_time, endTime, TimelineEvent.LINEAR, null));
+		if (timeline.events.length > 0)
+		{
+			var last = timeline.events[timeline.events.length - 1];
+			timeline.schedule(new TimelineEventLinear(endTime, target));
+		}
+		else
+		{
+			timeline.schedule(new TimelineEventLinear(endTime, target));
+		}
 	}
 
-	public function exponentialRampToValueAtTime(value : Float, endTime : Float)
+	public function exponentialRampToValueAtTime(target : Float, endTime : Float)
 	{
-		var last = timeline.events[timeline.events.length - 1];
-		timeline.schedule(new TimelineEvent(last.end, value, last.end_time, endTime, TimelineEvent.EXPONENTIAL, null));
+		if (timeline.events.length > 0)
+		{
+			var last = timeline.events[timeline.events.length - 1];
+			timeline.schedule(new TimelineEventExponential(endTime, target));
+		}
+		else
+		{
+			timeline.schedule(new TimelineEventExponential(endTime, target));
+		}
 	}
 	
 	public function setTargetAtTime(target : Float, startTime : Float, timeConstant : Float)
 	{
-		var last = timeline.events[timeline.events.length - 1];
 		// TODO: figure out the true algorithm for this.
-		timeline.schedule(new TimelineEvent(last.end, 
-			value, 
-			last.end_time, 
-			last.end_time, 
-			TimelineEvent.TARGETATTIME, 
-			null));
+		timeline.schedule(new TimelineEventTargetAtTime(
+			startTime, 
+			target, 
+			timeConstant));
 	}
 	
 	public function setValueCurveAtTime(values : ArrayBuffer, startTime : Float, duration : Float)
 	{
-		var last = timeline.events[timeline.events.length - 1];
-		timeline.schedule(new TimelineEvent(last.end, value, startTime, startTime + duration, 
-		TimelineEvent.VALUECURVE, values));
+		timeline.schedule(new TimelineEventValueCurve(startTime, startTime + duration, values));
 	}
 	
 	public function cancelScheduledValues(startTime : Float)
 	{
-		while (timeline.events[timeline.events.length - 1].end_time >= startTime)
+		while (timeline.events[timeline.events.length - 1].endTime() >= startTime)
 			timeline.events.pop();
 	}
 	

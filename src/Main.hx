@@ -4,6 +4,7 @@ package ;
 import com.ludamix.hxaudio.flash.Visualizer;
 import com.ludamix.hxaudio.mock.*;
 import com.ludamix.hxaudio.mock.timeline.*;
+import com.ludamix.hxaudio.mock.timeline.TimelineEvent;
 import flash.display.Bitmap;
 import flash.Lib;
 #else
@@ -50,15 +51,37 @@ class Main
 		//context.startRenderingOnline();
 		
 		var buf = new ArrayBuffer();
-		var timeline = new Timeline();
-		timeline.schedule(new TimelineEvent(0.5, 0.5, 10, 10, TimelineEvent.SET, null));
-		timeline.schedule(new TimelineEvent(-0.6, 0.5, 20, 40, TimelineEvent.LINEAR, null));
-		timeline.schedule(new TimelineEvent(0.3, 0.3, 98, 99, TimelineEvent.SET, null));
-		timeline.schedule(new TimelineEvent(0.5, -0.6, 110, 110, TimelineEvent.SET, null));
-		timeline.generate(0, 100, buf, 1.);
-		var viz = Visualizer.waveform(buf, 500, 100, null);
+		var timeline = new Timeline(0.);
+		
+		var vcurve = new ArrayBuffer();
+		for (n in 0...100)
+			vcurve.set(n, Math.sin(n / 100 * Math.PI));
+		
+		timeline.schedule(new TimelineEventSet(5, 0.5));
+		timeline.schedule(new TimelineEventSet(10, 0.));
+		timeline.schedule(new TimelineEventLinear(20, 0.9));
+		timeline.schedule(new TimelineEventExponential(40, 0.4));
+		timeline.schedule(new TimelineEventTargetAtTime(70, 0.8, 4));
+		timeline.schedule(new TimelineEventValueCurve(90, 99, vcurve));
+		timeline.schedule(new TimelineEventSet(110, 0.5));
+		timeline.generate(0, 100, buf, 100.);
+		var viz = Visualizer.amplitude(buf, 500, 100, null);
 		viz.y = 100;
 		Lib.current.addChild(viz);
+		
+		// TODO: start optimizing with fills again - create a fillFromTime(t : Float, samplerate : Float)...
+		// and then apply each fill internally in the event.
+		
+		var buf2 = new ArrayBuffer();
+		for (n in 0...100)
+		{
+			timeline.generate(n, n + 1, buf, 100.);
+			buf2.set(n, buf.get(0));
+		}
+		var viz2 = Visualizer.amplitude(buf2, 500, 100, null);
+		viz2.x = 0;
+		viz2.y = 200;
+		Lib.current.addChild(viz2);
 		
 		flash.Lib.current.addEventListener(flash.events.Event.ENTER_FRAME, onFrame);
 		

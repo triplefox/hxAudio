@@ -1,12 +1,17 @@
 package com.ludamix.hxaudio.mock.timeline;
 
+import com.ludamix.hxaudio.mock.timeline.TimelineEvent;
+
 class Timeline
 {
 
-	public function new()
+	public var default_value : Float;
+
+	public function new(default_value : Float)
 	{
 		value = 0.;
-		events = new Array();
+		this.default_value = default_value;
+		events = [];
 	}
 	
 	public var events : Array<TimelineEvent>;
@@ -18,21 +23,44 @@ class Timeline
 		// where different-type events overlap, it just inserts after the old ones at the appropriate moment.
 		// setValueCurve is an exception to this, you cannot overlap other stuff with it.
 		
+		event.setTimeline(this);
+		
 		var i = 0;
-		while (i < events.length) 
-		{		
-			// Overwrite same event type and time.
-			if (events[i].begin_time == event.begin_time && events[i].type == event.type) {
-				events[i] = event;
-				return;
-			}
+		if (event.beginSpecified()) // 
+		{
+			while (i < events.length) 
+			{		
+				// Overwrite same event type and time.
+				if (events[i].beginTime() == event.beginTime() && events[i].type() == event.type()) {
+					events[i] = event;
+					return;
+				}
 
-			if (events[i].begin_time > event.begin_time)
-				break;
-			
-			i += 1;
+				if (events[i].beginTime() > event.beginTime())
+					break;
+				
+				i += 1;
+			}
+		}
+		else
+		{
+			i = events.length-1;
+			if (events[i].endTime() < event.endTime()) i += 1;
 		}
 		events.insert(i, event);
+		
+		// Relink events.
+		
+		events[0].prev_event = null;
+		events[0].recalcTime();
+		for (n in 1...events.length)
+		{
+			events[n - 1].next_event = events[n];
+			events[n].prev_event = events[n - 1];
+			events[n].recalcTime();
+		}
+		events[events.length-1].next_event = null;
+		events[events.length-1].recalcTime();
 		
 	}
 	
@@ -41,75 +69,39 @@ class Timeline
 		var i = 0;
 		while(i<events.length)
 		{
-			if (events[i].begin_time >= startTime) { events.splice(i, 1); }
+			if (events[i].beginTime() >= startTime) { events.splice(i, 1); }
 			else i+=1;
 		}
-	}
-	
-	/**
-	 * Compute the sample distances of a given starting position relative to a value curve defined by start_position,
-	 * end_position, and count(total # of samples).
-	 */
-	private inline function calcDistances(
-		position : Int, 
-		start_position : Int,
-		end_position : Int,
-		count : Int
-		) : EventDistance
-	{
-		position -= start_position;
-		end_position -= start_position;
-		// (start_position = 0;)
-		
-		var pre_dist = position < 0 ? -position : 0;
-		pre_dist = Std.int(Math.min(pre_dist, count));
-		count -= pre_dist;
-		position += pre_dist;
-		
-		var mid_dist = Std.int(Math.max(0., end_position - position));
-		mid_dist = Std.int(Math.min(mid_dist, count));
-		count -= mid_dist;
-		
-		return {pre:pre_dist, mid:mid_dist, post:count};
-	}
-	
-	/**
-	 * Given a set of curves with "begin" and "end" times in samples, calculate the exact distances we'll travel
-	 * along each curve; where gaps appear between curves, we apply the gap to the "post" times.
-	 */
-	private inline function multiDistanceCalculator(
-		curve_times : Array<EventSampleTime>,
-		pos : Int,
-		count : Int
-	) : Array<EventDistance>
-	{
-		var dists = new Array<{pre:Int,mid:Int,post:Int}>();
-		var remainder = count;
-		for (n in curve_times)
-		{
-			var d = calcDistances(pos, n.begin, n.end, remainder);
-			if (dists.length > 0)
-			{
-				dists[dists.length - 1].post = n.begin - curve_times[dists.length - 1].end;
-				d.pre = 0;
-			}
-			remainder -= pos;
-			dists.push(d);
-		}
-		return dists;
+		if (events.length > 0) events[events.length - 1].next_event = null;
 	}
 	
 	/**
 	 * Fill buf with the value v to either the end of the curve or "count" samples, returning the # of samples written.
 	 */
-	private inline function fillFlat(
-		v : Float, 
+	/*
+	private inline function fillFlatEvent(
+		ev : TimelineEventSet, 
 		start_curve : Int, end_curve : Int, 
 		position : Int, 
 		count : Int, write_offset : Int, buf : ArrayBuffer)
 	{
-		position -= start_curve;
-		count = Std.int(Math.min(end_curve-position, count));
+		return fillFlat(ev.value, start_curve, end_curve, position, count, write_offset, buf);
+	}
+	*/
+	
+	/**
+	 * Internal fillFlat to cover the starts and ends.
+	 */
+	private inline function fillFlat(
+		v : Float,
+		start_curve : Int, end_curve : Int, 
+		position : Int, 
+		count : Int, write_offset : Int, buf : ArrayBuffer)
+	{
+		
+		end_curve -= start_curve;
+		count = Std.int(Math.min(end_curve, count));
+		
 		for (n in write_offset...count+write_offset)
 		{
 			buf.set(n, v);
@@ -121,12 +113,16 @@ class Timeline
 	/**
 	 * Lerp buf with the value v to either the end of the curve or "count" samples, returning the # of samples written.
 	 */
+	/*
 	private inline function fillLinear(
-		start : Float, end : Float,
+		ev : TimelineEventLinear, 
 		start_curve : Int, end_curve : Int,
 		position : Int, count : Int, write_offset : Int,
 		buf : ArrayBuffer)
 	{
+		var start = ev.beginValue(value);
+		var end = ev.endValue();
+		
 		var inc = (end - start) / count;
 		
 		position -= start_curve;
@@ -144,42 +140,91 @@ class Timeline
 		value = v;
 		return count;
 	}
+	*/
 	
 	/**
 	 * Exponentially multiply buf to either the end of the curve or "count" samples, returning the # of samples written.
 	 */
+	/*
 	private inline function fillExponential(
-		start_val : Float, end_val : Float, 
+		ev : TimelineEventExponential, 
 		start_curve : Int, end_curve : Int, 
 		position : Int, count : Int, write_offset : Int,
 		buf : ArrayBuffer)
 	{
+		var start_val = ev.beginValue(value);
+		var end_val = ev.endValue();
 		
+		// we fallback with the zero or negative value case.
+		if (start_val <= 0. || end_val <= 0.)
+			return fillFlat(value, start_curve, end_curve, position, count, write_offset, buf);
+		else
+		{
+			position -= start_curve;
+			end_curve -= start_curve;
+			count = Std.int(Math.min(end_curve, count));
+			
+			var ratio = end_val / start_val;
+			var inc = 1. / (end_curve);
+			var multiplier = Math.pow(ratio, inc);
+			var v = start_val * Math.pow(ratio, position / end_curve);
+			
+			for (n in write_offset...count+write_offset)
+			{
+				buf.set(n, v);
+				v *= multiplier;
+			}
+			
+			value = v;
+			return count;
+		}
+	}
+	*/
+
+	/*
+	private inline function discreteTimeConstantForSampleRate(
+		timeConstant : Float, 
+		sampleRate : Float) : 
+		Float
+	{
+		return 1 - Math.exp(-1 / (sampleRate * timeConstant));
+	}
+	*/
+
+	/**
+	 * Exponentially multiply buf towards a certain target, using a "time constant" metric.
+	 */
+	/*
+	private inline function fillTarget(
+		ev : TimelineEventTargetAtTime, 
+		start_curve : Int, end_curve : Int,
+		sample_rate : Float, 
+		position : Int, count : Int, write_offset : Int,
+		buf : ArrayBuffer)
+	{
+		
+		var dct = discreteTimeConstantForSampleRate(ev.time_constant, sample_rate);
 		position -= start_curve;
-		end_curve -= start_curve;
-		count = Std.int(Math.min(end_curve, count));
-		
-		var ratio = end_val / start_val;
-		var multiplier = Math.pow(ratio, 1 / count);
-		var v = start_val * Math.pow(ratio, position / end_curve);
-		
+		count = Std.int(Math.min(end_curve-position, count));
 		for (n in write_offset...count+write_offset)
 		{
-			buf.set(n, v);
-			v *= multiplier;
+			buf.set(n, value);
+			value += (ev.target - value) * dct;
 		}
-		
-		value = v;
 		return count;
+		
 	}
+	*/
 	
 	/**
 	 * Nearest-resample the value curve into buf, returning the # of samples written.
 	 */
+	/*
 	private inline function fillValueCurve(
-		curve : ArrayBuffer, start_curve : Int, end_curve : Int,
+		ev : TimelineEventValueCurve, start_curve : Int, end_curve : Int,
 		position : Int, count : Int, write_offset : Int, buf : ArrayBuffer)
 	{
+		var curve = ev.curve;
 		var dist_curve = end_curve - start_curve;
 		var inc = curve.length / dist_curve;
 		position -= start_curve;
@@ -190,16 +235,17 @@ class Timeline
 			curve_p += inc;
 		}
 		
-		value = buf.get(count+write_offset-1);
+		value = buf.get(Std.int(Math.max(0.,count+write_offset-1)));
 		return count;
 	}
+	*/
 	
 	/**
 	 * Fill the buffer with samples generated by the given beginning and ending positions in the timeline.
 	 */
-	public function generate(begin : Int, end : Int, buf : ArrayBuffer, ms_sample_ratio : Float)
+	public function generate(begin : Int, end : Int, buf : ArrayBuffer, samplerate : Float)
 	{
-		// * We walk through and find the first timeline event we need.
+		var ms_sample_ratio = 100. / samplerate;
 			
 		var emit = begin;
 		var playlength = end - begin;
@@ -213,86 +259,18 @@ class Timeline
 			return;
 		}
 		
-		t_start = events[i].begin_time;
-		t_end = events[i].end_time;
-		while (t_start < begin && t_end < begin && events.length<i)
-		{
-			i += 1;
-			t_start = events[i].begin_time;
-			t_end = events[i].end_time;
-		}
-		
-		var use_e = [events[i]];
-		
-		// * And the last one.
-		i += 1;
-		
-		if (i < events.length)
-		{
-			t_end = events[i].end_time;
-			
-			while (t_end < end && i<events.length)
-			{
-				t_end = events[i].end_time;
-				use_e.push(events[i]);
-				i += 1;
-			}
-		}
-		
-		// * Now we get the distances.
-		
-		var use_d = new Array<EventSampleTime>();
-		for ( n in use_e )
-		{
-			use_d.push( {
-				begin:Std.int(ms_sample_ratio * n.begin_time),
-				end:Std.int(ms_sample_ratio * n.end_time),
-				event:n
-			});
-		}
-		
-		var dist_array = multiDistanceCalculator(use_d, emit, end - begin);
-		
-		// * Now we can fill in the timeline for each event with the given distances.
+		var event = events[0];
 		
 		var written = 0;
-		var inc = 0;
-		for (i in 0...dist_array.length)
+		while (written < playlength)
 		{
-			var ev = use_e[i];
-			var timing = use_d[i];
-			var dist = dist_array[i];
-			
-			// * pre fill
-			
-			inc = fillFlat(value, emit, timing.begin, emit, dist.pre, written, buf);
-			emit += inc;
-			written += inc;
-			
-			// * mid fill
-			
-			switch(ev.type)
-			{
-				case TimelineEvent.SET: // done!
-					inc = fillFlat(ev.begin, timing.begin, timing.end, emit, dist.mid, written, buf);
-				case TimelineEvent.LINEAR: // done!
-					inc = fillLinear(ev.begin, ev.end, timing.begin, timing.end, emit, dist.mid, written, buf);
-				case TimelineEvent.EXPONENTIAL: // FIXME: TEST
-					inc = fillExponential(ev.begin, ev.end, timing.begin, timing.end, emit, dist.mid, written, buf);
-				case TimelineEvent.VALUECURVE: // FIXME: TEST
-					inc = fillValueCurve(ev.buf, timing.begin, timing.end, emit, dist.mid, written, buf);
-				case TimelineEvent.TARGETATTIME: // FIXME: TEST
-					inc = fillFlat(ev.begin, timing.begin, timing.end, emit, dist.mid, written, buf);
-			}
-			emit += inc;
-			written += inc;
-			
-			// * post fill
-			
-			inc = fillFlat(value, emit, emit+dist.post, written, dist.post, written, buf);
-			emit += inc;
-			written += inc;
+			var t = emit * ms_sample_ratio;
+			event = event.travelTo(t);
+			buf.set(written, event.valueAtTime(t));
+			written += 1;
+			emit += 1;
 		}
+		return;
 		
 	}
 
