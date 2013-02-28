@@ -28,9 +28,12 @@ class Visualizer
 			cur = Std.int(wf.get(Std.int(n*scaleX)) * LIM + H1);
 			var top = Std.int(Math.max(cur, last));
 			var bot = Std.int(Math.min(cur, last));
+			var col = 0x00FF00;
+			if (bot < 0) { bot = 0; col = 0xFF0000; }
+			if (top > display_height) { top = display_height; col = 0xFF0000; }
 			for (z in bot...top)
 			{
-				spr.bitmapData.setPixel(Std.int(n), z, 0x00FF00);
+				spr.bitmapData.setPixel(Std.int(n), z, col);
 			}
 			spr.bitmapData.setPixel(Std.int(n), cur, 0x008800);
 			last = cur;
@@ -60,9 +63,12 @@ class Visualizer
 			cur = Std.int(wf.get(Std.int(n*scaleX)) * -display_height + display_height);
 			var top = Std.int(Math.max(cur, last));
 			var bot = Std.int(Math.min(cur, last));
+			var col = 0x00FF00;
+			if (bot < 0) { bot = 0; col = 0xFF0000; }
+			if (top > display_height) { top = display_height; col = 0xFF0000; }
 			for (z in bot...top)
 			{
-				spr.bitmapData.setPixel(Std.int(n), z, 0x00FF00);
+				spr.bitmapData.setPixel(Std.int(n), z, col);
 			}
 			spr.bitmapData.setPixel(Std.int(n), cur, 0x008800);
 			last = cur;

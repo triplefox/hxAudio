@@ -259,17 +259,8 @@ class Timeline
 			return;
 		}
 		
-		var event = events[0];
+		events[0].fillFromTime(emit, 0, playlength, buf, samplerate); 
 		
-		var written = 0;
-		while (written < playlength)
-		{
-			var t = emit * ms_sample_ratio;
-			event = event.travelTo(t);
-			buf.set(written, event.valueAtTime(t));
-			written += 1;
-			emit += 1;
-		}
 		return;
 		
 	}

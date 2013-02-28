@@ -58,9 +58,9 @@ class Main
 			vcurve.set(n, Math.sin(n / 100 * Math.PI));
 		
 		timeline.schedule(new TimelineEventSet(5, 0.5));
-		timeline.schedule(new TimelineEventSet(10, 0.));
+		timeline.schedule(new TimelineEventSet(10, 0.2));
 		timeline.schedule(new TimelineEventLinear(20, 0.9));
-		timeline.schedule(new TimelineEventExponential(40, 0.4));
+		timeline.schedule(new TimelineEventExponential(40, 0.1));
 		timeline.schedule(new TimelineEventTargetAtTime(70, 0.8, 4));
 		timeline.schedule(new TimelineEventValueCurve(90, 99, vcurve));
 		timeline.schedule(new TimelineEventSet(110, 0.5));
@@ -69,8 +69,7 @@ class Main
 		viz.y = 100;
 		Lib.current.addChild(viz);
 		
-		// TODO: start optimizing with fills again - create a fillFromTime(t : Float, samplerate : Float)...
-		// and then apply each fill internally in the event.
+		// TODO: optimize fillFromTime of TargetAtTime, ValueCurve
 		
 		var buf2 = new ArrayBuffer();
 		for (n in 0...100)
