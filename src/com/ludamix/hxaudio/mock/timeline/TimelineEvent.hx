@@ -104,7 +104,7 @@ class TimelineEventSet implements TimelineEvent
 			t += ms_sample_ratio;
 		}
 		emit += write_ptr - ptr_start;
-		if (write_ptr!=write_end)
+		if (write_ptr != write_end)
 			event = next_event.fillFromTime(emit, write_ptr, write_end, buf, samplerate);
 		
 		return event;
@@ -166,7 +166,7 @@ class TimelineEventLinear implements TimelineEvent
 		var event : TimelineEvent = this;
 		var t = emit * ms_sample_ratio;
 		
-		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit + write_end) * ms_sample_ratio);
+		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
 		var curve_window = new TimeWindow(beginTime(), endTime() );
 		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
 		post_window = post_window.intersection(write_window);
@@ -274,7 +274,7 @@ class TimelineEventExponential implements TimelineEvent
 		var event : TimelineEvent = this;
 		var t = emit * ms_sample_ratio;
 		
-		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit + write_end) * ms_sample_ratio);
+		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
 		var curve_window = new TimeWindow(beginTime(), endTime() );
 		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
 		post_window = post_window.intersection(write_window);
@@ -345,8 +345,7 @@ class TimelineEventExponential implements TimelineEvent
 
 class TimelineEventValueCurve implements TimelineEvent
 {
-	public var begin_time : Float;
-	public var end_time : Float;
+	public var time_window : TimeWindow;
 	public var curve : ArrayBuffer;
 	public var next_event : TimelineEvent;
 	public var prev_event : TimelineEvent;
@@ -354,23 +353,21 @@ class TimelineEventValueCurve implements TimelineEvent
 	
 	public function new(begin_time, end_time, curve) 
 	{ 
-		this.begin_time = begin_time; 
-		this.end_time = end_time; 
+		this.time_window = new TimeWindow(begin_time, end_time); 
 		this.curve = curve; 
 	}
 
-	public inline function beginTime() { return this.begin_time; }
-	public inline function endTime() { return this.end_time; }
+	public inline function beginTime() { return this.time_window.start; }
+	public inline function endTime() { return this.time_window.end; }
 	public inline function beginValue() { return this.curve.get(0); }
 	public inline function endValue() { return this.curve.get(this.curve.length - 1); }
-	public inline function duration() { return this.end_time - this.beginTime(); }
+	public inline function duration() { return this.endTime() - this.beginTime(); }
 	
 	public inline function valueAtTime(t : Float) : Float 
 	{ 
-		var begin_time = beginTime();
-		var position = (t - begin_time) / (end_time - begin_time);
+		var position = (t - beginTime()) / (endTime() - beginTime());
 		return curve.get(Std.int(
-			Math.min(curve.length-1, position*curve.length + 0.5 + beginValue())));
+			Math.min(curve.length-1, position*curve.length + 0.5)));
 	}
 	public inline function fillFromTime(
 		emit : Int, 
@@ -381,14 +378,52 @@ class TimelineEventValueCurve implements TimelineEvent
 	{
 		var ms_sample_ratio = 100. / samplerate;
 		var event : TimelineEvent = this;
-		while (write_ptr < write_end)
+		var t = emit * ms_sample_ratio;
+		
+		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
+		var curve_window = new TimeWindow(beginTime(), endTime() );
+		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
+		post_window = post_window.intersection(write_window);
+		
+		if (write_window.overlaps(curve_window))
 		{
-			var t = emit * ms_sample_ratio;
-			event = event.travelTo(t);
-			buf.set(write_ptr, event.valueAtTime(t));
-			write_ptr += 1;
-			emit += 1;
+			var use_window = write_window.intersection(curve_window);
+			
+			var ptr_start = write_ptr;
+			var t_dist = use_window.distance();
+			var end_t = t + t_dist;
+			var c_dist = (endTime() - beginTime());
+			var position = (t - beginTime()) / c_dist;
+			var inc = ms_sample_ratio / c_dist;
+			var p_dist = position + t_dist / c_dist;
+			
+			while (position < p_dist)
+			{
+				buf.set(write_ptr, curve.get(Std.int(position*curve.length + 0.5)));
+				write_ptr += 1;
+				position += inc;
+			}
+			var write_dist = (write_ptr - ptr_start);
+			t += ms_sample_ratio * write_dist;
+			emit += write_dist;
 		}
+		
+		if (post_window.distance()>0.)
+		{	
+			var ptr_start = write_ptr;
+			var t_dist = post_window.distance();
+			var end_t = t + t_dist;
+			
+			while (t < end_t)
+			{
+				buf.set(write_ptr, endValue());
+				write_ptr += 1;
+				t += ms_sample_ratio;
+			}
+			emit += write_ptr - ptr_start;
+		}
+		if (post_window.end < write_window.end)
+			event = next_event.fillFromTime(emit, write_ptr, write_end, buf, samplerate);
 		return event;
 	}
 
@@ -421,6 +456,7 @@ class TimelineEventTargetAtTime implements TimelineEvent
 	public var timeline : Timeline;
 	public var begin_value : Float;
 	public var end_value : Float;
+	public var end_time : Float;
 	
 	public function new(begin_time, target, time_constant) 
 	{ 
@@ -432,11 +468,7 @@ class TimelineEventTargetAtTime implements TimelineEvent
 	public inline function beginTime() { return this.begin_time; }
 	public inline function endTime() 
 	{ 
-		// we return the time needed to reach within -96dB of the target value(0.00002),
-		// approached in steps of 63.2% for each time constant.
-		// or we return the beginTime of the next event.
-		if (this.next_event == null) return this.begin_time + this.time_constant * 23.58; 
-		else return this.next_event.beginTime(); 
+		return this.end_time;
 	}
 	
 	public inline function duration() { return 0.00001; }
@@ -459,15 +491,64 @@ class TimelineEventTargetAtTime implements TimelineEvent
 	{
 		var ms_sample_ratio = 100. / samplerate;
 		var event : TimelineEvent = this;
-		while (write_ptr < write_end)
+		var t = emit * ms_sample_ratio;
+		
+		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
+		var curve_window = new TimeWindow(beginTime(), endTime());
+		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
+		post_window = post_window.intersection(write_window);
+		
+		trace([[write_window.start, write_window.end], [curve_window.start, curve_window.end],
+				[post_window.start, post_window.end]]);
+		
+		if (write_window.overlaps(curve_window))
 		{
-			var t = emit * ms_sample_ratio;
-			event = event.travelTo(t);
-			buf.set(write_ptr, event.valueAtTime(t));
-			write_ptr += 1;
-			emit += 1;
+			var use_window = write_window.intersection(curve_window);
+			
+			var ptr_start = write_ptr;
+			var t_dist = use_window.distance();
+			var end_t = t + t_dist;
+			var value = valueAtTime(t);
+			var dct = 1 - Math.exp( -1 / (ms_sample_ratio * time_constant));
+			
+			while (t < end_t)
+			{
+				buf.set(write_ptr, value);
+				value += (target - value) * dct;
+				write_ptr += 1;
+				t += ms_sample_ratio;
+			}
+			emit += write_ptr - ptr_start;
+		}
+		
+		if (post_window.distance()>0.)
+		{	
+			var ptr_start = write_ptr;
+			var t_dist = post_window.distance();
+			var end_t = t + t_dist;
+			var end_v = endValue();
+			
+			while (t < end_t)
+			{
+				buf.set(write_ptr, end_v);
+				write_ptr += 1;
+				t += ms_sample_ratio;
+			}
+			emit += write_ptr - ptr_start;
+		}
+		if (post_window.end < write_window.end)
+		{
+			event = next_event.fillFromTime(emit, write_ptr, write_end, buf, samplerate);
 		}
 		return event;
+		/*while (write_ptr < write_end)
+		{
+			buf.set(write_ptr, value);
+			write_ptr += 1;
+			emit += 1;
+			event = event.travelTo(t);
+		}
+		return event;*/
 	}
 	
 	public inline function beginValue() { return this.begin_value; }
@@ -484,6 +565,10 @@ class TimelineEventTargetAtTime implements TimelineEvent
 	public inline function recalcTime() 
 	{ 
 		this.begin_value = (prev_event == null) ? timeline.default_value : prev_event.endValue();
+		
+		if (this.next_event == null) this.end_time = this.begin_time + this.duration(); 
+		else this.end_time = this.next_event.beginTime();
+		
 		this.end_value = (next_event == null) ? target : valueAtTime(endTime());
 	}
 	

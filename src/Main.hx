@@ -55,7 +55,7 @@ class Main
 		
 		var vcurve = new ArrayBuffer();
 		for (n in 0...100)
-			vcurve.set(n, Math.sin(n / 100 * Math.PI));
+			vcurve.set(n, Math.sin(n / 50 * Math.PI) / 2 + 0.5);
 		
 		timeline.schedule(new TimelineEventSet(5, 0.5));
 		timeline.schedule(new TimelineEventSet(10, 0.2));
@@ -65,11 +65,12 @@ class Main
 		timeline.schedule(new TimelineEventValueCurve(90, 99, vcurve));
 		timeline.schedule(new TimelineEventSet(110, 0.5));
 		timeline.generate(0, 100, buf, 100.);
+		
 		var viz = Visualizer.amplitude(buf, 500, 100, null);
 		viz.y = 100;
 		Lib.current.addChild(viz);
 		
-		// TODO: optimize fillFromTime of TargetAtTime, ValueCurve
+		// Now run tests using randomized permutations of the timeline.
 		
 		var buf2 = new ArrayBuffer();
 		for (n in 0...100)
