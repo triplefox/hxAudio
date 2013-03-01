@@ -103,17 +103,21 @@ class TimelineEventSet implements TimelineEvent
 		var event : TimelineEvent = this;
 		var t = emit * ms_sample_ratio;
 		var emit_t = (emit - write_ptr + write_end) * ms_sample_ratio;
-		var end_t = next_event == null ? emit_t : Math.min(emit_t, next_event.beginTime());
+		
+		var curve_window = new TimeWindow(this.time, next_event == null ? emit_t : next_event.beginTime());
+		var write_window = new TimeWindow(t, emit_t);
+		var use_window = curve_window.intersection(write_window);
 		
 		var ptr_start = write_ptr;
 		
-		while (t < end_t)
+		while (t < use_window.end)
 		{
 			buf.set(write_ptr, this.value);
 			write_ptr += 1;
 			t += ms_sample_ratio;
 		}
 		emit += write_ptr - ptr_start;
+		
 		if (write_ptr != write_end)
 			event = next_event.fillFromTime(emit, write_ptr, write_end, buf, samplerate);
 		
@@ -187,11 +191,21 @@ class TimelineEventLinear implements TimelineEvent
 		var event : TimelineEvent = this;
 		var t = emit * ms_sample_ratio;
 		
-		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
 		var curve_window = new TimeWindow(beginTime(), endTime() );
+		
+		while(curve_window.start > t)
+		{
+			buf.set(write_ptr, beginValue());
+			write_ptr += 1;
+			t += ms_sample_ratio;
+			emit += 1;
+		}
+		
+		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
 		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
 		post_window = post_window.intersection(write_window);
 		
+		//trace([[write_window, curve_window, post_window]]);
 		if (write_window.overlaps(curve_window))
 		{
 			var use_window = write_window.intersection(curve_window);
@@ -239,7 +253,6 @@ class TimelineEventLinear implements TimelineEvent
 	public inline function setTimeline(timeline : Timeline):Void { this.timeline = timeline; }
 	public inline function beginSpecified() { return false; }
 	
-	private var time_cache : Float;
 	public inline function recalcTime() 
 	{ 
 		this.time_window.start = prev_event == null ? 0. : prev_event.beginTime() + prev_event.duration();
@@ -306,11 +319,21 @@ class TimelineEventExponential implements TimelineEvent
 		var event : TimelineEvent = this;
 		var t = emit * ms_sample_ratio;
 		
-		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
 		var curve_window = new TimeWindow(beginTime(), endTime() );
+		
+		while(curve_window.start > t)
+		{
+			buf.set(write_ptr, beginValue());
+			write_ptr += 1;
+			t += ms_sample_ratio;
+			emit += 1;
+		}
+		
+		var write_window = new TimeWindow(emit * ms_sample_ratio, (emit - write_ptr + write_end) * ms_sample_ratio);
 		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
 		post_window = post_window.intersection(write_window);
 		
+		//trace([[write_window, curve_window, post_window]]);
 		if (write_window.overlaps(curve_window))
 		{
 			var use_window = write_window.intersection(curve_window);
@@ -360,7 +383,6 @@ class TimelineEventExponential implements TimelineEvent
 	public inline function setTimeline(timeline : Timeline):Void { this.timeline = timeline; }
 	public inline function beginSpecified() { return false; }
 	
-	private var time_cache : Float;
 	public inline function recalcTime() 
 	{ 
 		this.time_window.start = prev_event == null ? 0. : prev_event.beginTime() + prev_event.duration();
@@ -575,8 +597,6 @@ class TimelineEventTargetAtTime implements TimelineEvent
 			emit += write_ptr - ptr_start;
 		}
 		
-		trace([[write_window, curve_window, post_window]]);
-		
 		if (post_window.distance()>0.)
 		{	
 			var ptr_start = write_ptr;
@@ -597,14 +617,6 @@ class TimelineEventTargetAtTime implements TimelineEvent
 			event = next_event.fillFromTime(emit, write_ptr, write_end, buf, samplerate);
 		}
 		return event;
-		/*while (write_ptr < write_end)
-		{
-			buf.set(write_ptr, value);
-			write_ptr += 1;
-			emit += 1;
-			event = event.travelTo(t);
-		}
-		return event;*/
 	}
 	
 	public inline function beginValue() { return this.begin_value; }
