@@ -27,6 +27,8 @@ interface TimelineEvent
 	public function setTimeline(timeline : Timeline):Void;
 	public function recalcTime():Void;
 	public function travelTo(time : Float):TimelineEvent;
+	public function window():TimeWindow;
+	public function toString():String;
 
 }
 
@@ -65,6 +67,11 @@ class TimeWindow
 		return this.end - this.start;
 	}
 	
+	public function toString()
+	{
+		return '(${this.start}, ${this.end})';
+	}
+	
 }
 
 class TimelineEventSet implements TimelineEvent
@@ -76,12 +83,14 @@ class TimelineEventSet implements TimelineEvent
 	public var timeline : Timeline;
 	
 	public function new(time, value) { this.time = time; this.value = value; }	
+	
+	public inline function window() { return new TimeWindow(this.time, this.time); }
 
 	public inline function beginTime() { return this.time; }
 	public inline function endTime() { return this.time; }
 	public inline function beginValue() { return this.value; }
 	public inline function endValue() { return this.value; }
-	public inline function duration() { return 0.00001; }
+	public inline function duration() { return 0.; }
 	public inline function valueAtTime(t : Float) : Float { return this.value; }
 	public inline function fillFromTime(
 		emit : Int, 
@@ -93,7 +102,8 @@ class TimelineEventSet implements TimelineEvent
 		var ms_sample_ratio = 100. / samplerate;
 		var event : TimelineEvent = this;
 		var t = emit * ms_sample_ratio;
-		var end_t = next_event == null ? write_end * ms_sample_ratio : next_event.beginTime();
+		var emit_t = (emit - write_ptr + write_end) * ms_sample_ratio;
+		var end_t = next_event == null ? emit_t : Math.min(emit_t, next_event.beginTime());
 		
 		var ptr_start = write_ptr;
 		
@@ -126,11 +136,17 @@ class TimelineEventSet implements TimelineEvent
 		else return this;
 	}
 	
+	public function toString()
+	{
+		return ('set, t=${this.time} v=${this.value}');
+	}
+	
 }
 
 class TimelineEventLinear implements TimelineEvent
 {
 	public var time_window : TimeWindow;
+	public var distance : Float;
 	public var next_event : TimelineEvent;
 	public var prev_event : TimelineEvent;
 	public var timeline : Timeline;
@@ -143,6 +159,10 @@ class TimelineEventLinear implements TimelineEvent
 		this.end_value = end_value; 
 	}	
 
+	public inline function window() { return new TimeWindow(
+		this.time_window.start, 
+		this.time_window.end); }
+	
 	public inline function beginTime() { return this.time_window.start; }
 	public inline function endTime() { return this.time_window.end; }
 	public inline function beginValue() { return this.begin_value; }
@@ -151,6 +171,7 @@ class TimelineEventLinear implements TimelineEvent
 	
 	public inline function valueAtTime(t : Float) : Float 
 	{ 
+		t = Math.min(endTime(), Math.max(t, beginTime()));
 		var position = (t - beginTime()) / (endTime() - beginTime());
 		return (endValue() - beginValue()) * position + beginValue();
 	}
@@ -174,21 +195,23 @@ class TimelineEventLinear implements TimelineEvent
 		if (write_window.overlaps(curve_window))
 		{
 			var use_window = write_window.intersection(curve_window);
-			
-			var ptr_start = write_ptr;
-			var t_dist = use_window.distance();
-			var end_t = t + t_dist;
-			var value = valueAtTime(t);
-			var inc = valueAtTime(beginTime() + ms_sample_ratio) - valueAtTime(beginTime());
-			
-			while (t < end_t)
+			if (use_window.distance() >= ms_sample_ratio)
 			{
-				buf.set(write_ptr, value);
-				value += inc;
-				write_ptr += 1;
-				t += ms_sample_ratio;
+				var ptr_start = write_ptr;
+				var t_dist = use_window.distance();
+				var end_t = t + t_dist;
+				var value = valueAtTime(t);
+				var inc = valueAtTime(beginTime() + ms_sample_ratio) - valueAtTime(beginTime());
+				
+				while (t < end_t)
+				{
+					buf.set(write_ptr, value);
+					value += inc;
+					write_ptr += 1;
+					t += ms_sample_ratio;
+				}
+				emit += write_ptr - ptr_start;
 			}
-			emit += write_ptr - ptr_start;
 		}
 		
 		if (post_window.distance()>0.)
@@ -232,6 +255,11 @@ class TimelineEventLinear implements TimelineEvent
 		else return this;
 	}
 
+	public function toString()
+	{
+		return ('linear, t=${this.beginTime()} d=${this.duration()} v=${this.endValue()}');
+	}
+	
 }
 
 class TimelineEventExponential implements TimelineEvent
@@ -249,6 +277,10 @@ class TimelineEventExponential implements TimelineEvent
 		this.end_value = end_value; 
 	}	
 
+	public inline function window() { return new TimeWindow(
+		this.time_window.start, 
+		this.time_window.end); }
+	
 	public inline function beginTime() { return this.time_window.start; }
 	public inline function endTime() { return this.time_window.end; }
 	public inline function beginValue() { return this.begin_value; }
@@ -282,22 +314,25 @@ class TimelineEventExponential implements TimelineEvent
 		if (write_window.overlaps(curve_window))
 		{
 			var use_window = write_window.intersection(curve_window);
-			
-			var ptr_start = write_ptr;
-			var t_dist = use_window.distance();
-			var end_t = t + t_dist;
-			var value = valueAtTime(t);
-			var ratio = end_value / begin_value;
-			var multiplier = Math.pow(ratio, 1./t_dist * ms_sample_ratio);
-			
-			while (t < end_t)
+			if (use_window.distance() >= ms_sample_ratio)
 			{
-				buf.set(write_ptr, value);
-				value *= multiplier;
-				write_ptr += 1;
-				t += ms_sample_ratio;
+				var ptr_start = write_ptr;
+				var t_dist = use_window.distance();
+				var end_t = t + t_dist;
+				var value = valueAtTime(t);
+				var ratio = end_value / begin_value;
+				if (begin_value == end_value) ratio = 1.; // fix some NaN
+				var multiplier = Math.pow(ratio, 1./t_dist * ms_sample_ratio);
+				
+				while (t < end_t)
+				{
+					buf.set(write_ptr, value);
+					value *= multiplier;
+					write_ptr += 1;
+					t += ms_sample_ratio;
+				}
+				emit += write_ptr - ptr_start;
 			}
-			emit += write_ptr - ptr_start;
 		}
 		
 		if (post_window.distance()>0.)
@@ -341,6 +376,11 @@ class TimelineEventExponential implements TimelineEvent
 		else return this;
 	}
 
+	public function toString()
+	{
+		return ('exponential, t=${this.beginTime()} d=${this.duration()} v=${this.endValue()}');
+	}
+	
 }
 
 class TimelineEventValueCurve implements TimelineEvent
@@ -357,6 +397,10 @@ class TimelineEventValueCurve implements TimelineEvent
 		this.curve = curve; 
 	}
 
+	public inline function window() { return new TimeWindow(
+		this.time_window.start, 
+		this.time_window.end); }
+	
 	public inline function beginTime() { return this.time_window.start; }
 	public inline function endTime() { return this.time_window.end; }
 	public inline function beginValue() { return this.curve.get(0); }
@@ -397,9 +441,17 @@ class TimelineEventValueCurve implements TimelineEvent
 			var inc = ms_sample_ratio / c_dist;
 			var p_dist = position + t_dist / c_dist;
 			
+			var prev_value = (prev_event == null) ? timeline.default_value : prev_event.endValue();
+			
+			while (position < 0)
+			{
+				buf.set(write_ptr, prev_value);
+				write_ptr += 1;
+				position += inc;
+			}
 			while (position < p_dist)
 			{
-				buf.set(write_ptr, curve.get(Std.int(position*curve.length + 0.5)));
+				buf.set(write_ptr, curve.get(Std.int(position*(curve.length-1) + 0.5)));
 				write_ptr += 1;
 				position += inc;
 			}
@@ -443,12 +495,16 @@ class TimelineEventValueCurve implements TimelineEvent
 		else return this;
 	}
 	
+	public function toString()
+	{
+		return ('valuecurve, t=${this.beginTime()} e=${this.endTime()}');
+	}
+	
 }
 
 class TimelineEventTargetAtTime implements TimelineEvent
 {
 
-	public var begin_time : Float;
 	public var target : Float;
 	public var time_constant : Float;
 	public var next_event : TimelineEvent;
@@ -456,22 +512,23 @@ class TimelineEventTargetAtTime implements TimelineEvent
 	public var timeline : Timeline;
 	public var begin_value : Float;
 	public var end_value : Float;
-	public var end_time : Float;
+	public var time_window : TimeWindow;
+	
+	public inline function window() { return new TimeWindow(
+		this.time_window.start, 
+		this.time_window.end); }
 	
 	public function new(begin_time, target, time_constant) 
 	{ 
-		this.begin_time = begin_time; 
+		this.time_window = new TimeWindow(begin_time, begin_time);
 		this.target = target; 
 		this.time_constant = time_constant; 
 	}
 
-	public inline function beginTime() { return this.begin_time; }
-	public inline function endTime() 
-	{ 
-		return this.end_time;
-	}
+	public inline function beginTime() { return this.time_window.start; }
+	public inline function endTime()  {  return this.time_window.end; }
 	
-	public inline function duration() { return 0.00001; }
+	public inline function duration() { return 0.; }
 	
 	public inline function valueAtTime(t : Float) : Float 
 	{ 
@@ -498,9 +555,6 @@ class TimelineEventTargetAtTime implements TimelineEvent
 		var post_window = new TimeWindow(endTime(), next_event == null ? write_window.end : next_event.beginTime() );
 		post_window = post_window.intersection(write_window);
 		
-		trace([[write_window.start, write_window.end], [curve_window.start, curve_window.end],
-				[post_window.start, post_window.end]]);
-		
 		if (write_window.overlaps(curve_window))
 		{
 			var use_window = write_window.intersection(curve_window);
@@ -520,6 +574,8 @@ class TimelineEventTargetAtTime implements TimelineEvent
 			}
 			emit += write_ptr - ptr_start;
 		}
+		
+		trace([[write_window, curve_window, post_window]]);
 		
 		if (post_window.distance()>0.)
 		{	
@@ -566,8 +622,8 @@ class TimelineEventTargetAtTime implements TimelineEvent
 	{ 
 		this.begin_value = (prev_event == null) ? timeline.default_value : prev_event.endValue();
 		
-		if (this.next_event == null) this.end_time = this.begin_time + this.duration(); 
-		else this.end_time = this.next_event.beginTime();
+		if (this.next_event == null) time_window.end = time_window.start;
+		else time_window.end = next_event.beginTime();
 		
 		this.end_value = (next_event == null) ? target : valueAtTime(endTime());
 	}
@@ -579,6 +635,11 @@ class TimelineEventTargetAtTime implements TimelineEvent
 			return next_event.travelTo(time);
 		}
 		else return this;
+	}
+	
+	public function toString()
+	{
+		return ('target, t=${this.beginTime()} target=${this.target} ts=${this.time_constant}');
 	}
 	
 }
